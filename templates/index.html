@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Wiper Tool</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Data Wiper Tool</h1>
+        <p>A secure tool to wipe disks and directories.</p>
+
+        <section id="disks-section">
+            <h2>Available Disks & Partitions</h2>
+            <button id="list-disks-btn">List Disks</button>
+            <div id="disks-list"></div>
+        </section>
+
+        <section id="wipe-section">
+            <h2>Secure Wipe</h2>
+            <form id="wipe-form">
+                <label for="device">Device or Directory Path:</label>
+                <input type="text" id="device" name="device" required placeholder="e.g., /dev/sdb or C:\path\to\dir">
+
+                <label for="passes">Number of Overwrite Passes:</label>
+                <input type="number" id="passes" name="passes" value="3" min="1" max="10">
+
+                <button type="submit">Start Wipe</button>
+            </form>
+        </section>
+
+        <section id="status-section">
+            <h2>Status</h2>
+            <div id="status"></div>
+            <div id="logs"></div>
+        </section>
+    </div>
+
+    <script>
+        const listDisksBtn = document.getElementById('list-disks-btn');
+        const disksList = document.getElementById('disks-list');
+        const wipeForm = document.getElementById('wipe-form');
+        const statusDiv = document.getElementById('status');
+        const logsDiv = document.getElementById('logs');
+
+        listDisksBtn.addEventListener('click', async () => {
+            try {
+                const response = await fetch('/api/disks');
+                const disks = await response.json();
+                disksList.innerHTML = '<ul>' + disks.map(disk => {
+                    if (disk.error) {
+                        return `<li>Error: ${disk.error}</li>`;
+                    }
+                    return `<li>${disk.name} - Size: ${disk.size || 'N/A'} - Type: ${disk.type || 'N/A'} - Mount: ${disk.mountpoint || 'N/A'}</li>`;
+                }).join('') + '</ul>';
+            } catch (error) {
+                disksList.innerHTML = '<p>Error fetching disks.</p>';
+            }
+        });
+
+        wipeForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const device = document.getElementById('device').value;
+            const passes = document.getElementById('passes').value;
+
+            if (!confirm(`WARNING: This will ERASE all data on ${device}. Type YES to confirm.`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/wipe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ device, passes })
+                });
+                const result = await response.json();
+                statusDiv.innerHTML = `<p>${result.message}</p>`;
+                if (response.ok) {
+                    pollStatus();
+                }
+            } catch (error) {
+                statusDiv.innerHTML = '<p>Error starting wipe.</p>';
+            }
+        });
+
+        function pollStatus() {
+            const interval = setInterval(async () => {
+                try {
+                    const response = await fetch('/api/wipe_status');
+                    const status = await response.json();
+                    logsDiv.innerHTML = '<ul>' + status.logs.map(log => `<li>${log}</li>`).join('') + '</ul>';
+                    if (!status.running) {
+                        clearInterval(interval);
+                    }
+                } catch (error) {
+                    logsDiv.innerHTML = '<p>Error fetching status.</p>';
+                }
+            }, 1000);
+        }
+    </script>
+</body>
+</html>
